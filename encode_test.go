@@ -3,11 +3,23 @@ package main
 import (
 	"github.com/djimenez/iconv-go"
 	"os"
+	"strings"
 	"testing"
 )
 
-func TestUtf8Encoding(t *testing.T) {
+type DataCollector struct {
+	AddressPhases []string
+}
 
+func (dc *DataCollector) Init() {
+
+}
+
+//convertAllPhaseesToUtf8() {
+//
+//}
+
+func TestUtf8Encoding(t *testing.T) {
 	readFile, _ := os.OpenFile("./juso/지번_경기도.txt", os.O_RDWR|os.O_CREATE|os.O_APPEND, os.ModePerm)
 	os.Mkdir("./result", os.ModePerm)
 	writeFile, _ := os.OpenFile("./result/jibun.txt", os.O_RDWR|os.O_CREATE|os.O_APPEND, os.ModePerm)
@@ -27,5 +39,13 @@ func TestUtf8Encoding(t *testing.T) {
 		str, _ := iconv.ConvertString(string(bytes[:n]), "euc-kr", "utf-8")
 
 		writeFile.WriteString(str)
+	}
+}
+
+func convertEucKrToUtf8() {
+	files, _ := os.ReadDir("./juso")
+
+	for _, file := range files {
+		strings.HasPrefix(file.Name())
 	}
 }
