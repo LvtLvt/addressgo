@@ -15,10 +15,6 @@ func (dc *DataCollector) Init() {
 
 }
 
-//convertAllPhaseesToUtf8() {
-//
-//}
-
 func TestUtf8Encoding(t *testing.T) {
 	readFile, _ := os.OpenFile("./juso/지번_경기도.txt", os.O_RDWR|os.O_CREATE|os.O_APPEND, os.ModePerm)
 	os.Mkdir("./result", os.ModePerm)
@@ -46,6 +42,6 @@ func convertEucKrToUtf8() {
 	files, _ := os.ReadDir("./juso")
 
 	for _, file := range files {
-		strings.HasPrefix(file.Name())
+		strings.HasPrefix(file.Name(), "something")
 	}
 }
