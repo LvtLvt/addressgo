@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	defaultFileFlag = os.O_RDWR | os.O_CREATE | os.O_APPEND
-	defaultFileMode = os.ModePerm
+	DefaultFileFlag = os.O_RDWR | os.O_CREATE | os.O_APPEND
+	DefaultFileMode = os.ModePerm
 )
 
 type Aggregator interface {
@@ -28,11 +28,16 @@ func (fp *FilePhase) GetCsvHeadStr() string {
 	return strings.Join(fp.CsvHead, "|") + "\n"
 }
 
+func (fp *FilePhase) GetFilename() string {
+	return fp.PrefixName + ".txt"
+}
+
 type FileAggregator struct {
 	Src          string
 	Dest         string
 	FilePhases   []FilePhase
 	FromEncoding string
+	pwd          string
 }
 
 // Aggregate whole files which belong to the src directory
@@ -47,23 +52,21 @@ func (fa *FileAggregator) Aggregate() {
 }
 
 func (fa *FileAggregator) NewReader(filePhase FilePhase) (io.Reader, error) {
-	return os.OpenFile(fa.Dest+"/"+filePhase.PrefixName+".txt", defaultFileFlag, defaultFileMode)
+	return os.OpenFile(fa.Dest+"/"+filePhase.PrefixName+".txt", DefaultFileFlag, DefaultFileMode)
 }
 
-type workableType struct {
+type workableFile struct {
 	file      os.DirEntry
 	filePhase FilePhase
 }
 
 func (fa *FileAggregator) merge(filters ...func(bytes []byte) ([]byte, error)) {
-	path, _ := os.Getwd()
-	files, _ := os.ReadDir(path + "/" + fa.Src)
+	files, _ := os.ReadDir(fa.Src)
 
-	println(path)
 	println(len(files))
 
 	var wg sync.WaitGroup
-	var workableFiles []workableType
+	var workableFiles []workableFile
 
 	for _, file := range files {
 		var filePhase *FilePhase
@@ -74,7 +77,7 @@ func (fa *FileAggregator) merge(filters ...func(bytes []byte) ([]byte, error)) {
 			continue
 		}
 
-		workableFiles = append(workableFiles, workableType{file: file, filePhase: *filePhase})
+		workableFiles = append(workableFiles, workableFile{file: file, filePhase: *filePhase})
 	}
 
 	wg.Add(len(workableFiles))
@@ -83,10 +86,10 @@ func (fa *FileAggregator) merge(filters ...func(bytes []byte) ([]byte, error)) {
 		file := workableFile.file
 		filePhase := workableFile.filePhase
 		go func() {
-			rFile, _ := os.OpenFile(fa.Src+"/"+file.Name(), defaultFileFlag, defaultFileMode)
+			rFile, _ := os.OpenFile(fa.Src+"/"+file.Name(), DefaultFileFlag, DefaultFileMode)
 
-			_ = os.Mkdir(fa.Dest, defaultFileMode)
-			wFile, _ := os.OpenFile(fa.Dest+"/"+filePhase.PrefixName+".txt", defaultFileFlag, defaultFileMode)
+			_ = os.Mkdir(fa.Dest, DefaultFileMode)
+			wFile, _ := os.OpenFile(fa.Dest+"/"+filePhase.PrefixName+".txt", DefaultFileFlag, DefaultFileMode)
 
 			defer rFile.Close()
 			defer wFile.Close()
@@ -104,7 +107,7 @@ func (fa *FileAggregator) merge(filters ...func(bytes []byte) ([]byte, error)) {
 				n, err := rFile.Read(bytes)
 
 				if err != nil {
-					if err == io.EOF || n == 0 {
+					if err == io.EOF {
 						break
 					} else {
 						_ = fmt.Errorf("while reading, error occured cause: %s", err.Error())
@@ -157,8 +160,4 @@ func makeEncodingFilter(encoding string) func(bytes []byte) ([]byte, error) {
 	default:
 		panic("unsupported encoding")
 	}
-}
-
-func appendCsvHead(names []string, writer io.Writer) {
-	writer.Write([]byte(strings.Join(names, "|")))
 }
