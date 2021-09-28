@@ -87,6 +87,7 @@ func (fa *FileAggregator) merge(filters ...func(bytes []byte) ([]byte, error)) {
 		filePhase := workableFile.filePhase
 		go func() {
 			rFile, _ := os.OpenFile(fa.Src+"/"+file.Name(), DefaultFileFlag, DefaultFileMode)
+			rFileInfo, _ := rFile.Stat()
 
 			_ = os.Mkdir(fa.Dest, DefaultFileMode)
 			wFile, _ := os.OpenFile(fa.Dest+"/"+filePhase.PrefixName+".txt", DefaultFileFlag, DefaultFileMode)
@@ -95,7 +96,7 @@ func (fa *FileAggregator) merge(filters ...func(bytes []byte) ([]byte, error)) {
 			defer wFile.Close()
 			defer wg.Done()
 
-			var bytes = make([]byte, 1024*1000*1000)
+			var bytes = make([]byte, rFileInfo.Size())
 
 			// TODO: move to the place where before execution
 			fileInfo, _ := wFile.Stat()

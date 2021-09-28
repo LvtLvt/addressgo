@@ -4,9 +4,11 @@ import (
 	"csvgo/data"
 	"csvgo/data/meta"
 	"encoding/csv"
+	"fmt"
 	"github.com/gocarina/gocsv"
 	"io"
 	"os"
+	"runtime"
 )
 
 var pwd, _ = os.Getwd()
@@ -54,21 +56,36 @@ func main() {
 		r.Comma = '|'
 		return r
 	})
-	var jusoArr []meta.Juso
+
+	//var jusoArr []*meta.Juso
+	//jusoArr := []*meta.Juso{}
 
 	jusoFile, _ := os.OpenFile(dest+"/"+주소.GetFilename(), data.DefaultFileFlag, data.DefaultFileMode)
-	err := gocsv.UnmarshalFile(jusoFile, &jusoArr)
-	if err != nil {
-		return
+	info, _ := jusoFile.Stat()
+	print(info.Size())
+	c := make(chan meta.Juso)
+
+	go func() {
+		err := gocsv.UnmarshalToChan(jusoFile, c)
+		if err != nil {
+			println(err.Error())
+			return
+		}
+	}()
+
+	for range c {
+
 	}
 
-	c := make(chan meta.Juso)
-	gocsv.UnmarshalToChan(jusoFile, c)
+	//err := gocsv.UnmarshalFile(jusoFile, &jusoArr)
+	//if err != nil {
+	//	print(err.Error())
+	//	return
+	//}
+	//
+	//println(len(jusoArr))
 
-	println(len(jusoArr))
-
-	csvReader := csv.NewReader(jusoFile)
-	csvReader.ReuseRecord = true
+	PrintMemUsage()
 
 	//file, err := os.OpenFile("주소.txt", os.O_RDWR|os.O_CREATE, os.ModePerm)
 	//if err != nil {
@@ -101,4 +118,18 @@ func main() {
 	//println("end...")
 	//
 	//jusoArr = jusoArr[0:6]
+}
+
+func PrintMemUsage() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
+	fmt.Printf("Alloc = %v MiB", bToMb(m.Alloc))
+	fmt.Printf("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc))
+	fmt.Printf("\tSys = %v MiB", bToMb(m.Sys))
+	fmt.Printf("\tNumGC = %v\n", m.NumGC)
+}
+
+func bToMb(b uint64) uint64 {
+	return b / 1024 / 1024
 }
