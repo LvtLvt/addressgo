@@ -19,7 +19,7 @@ var (
 )
 
 type Collector interface {
-	Aggregate()
+	Collect()
 	NewReader(filePhase FilePhase) (io.Reader, error)
 }
 
@@ -44,12 +44,11 @@ type FileCollector struct {
 	pwd          string
 }
 
-// Aggregate whole files which belong to the src directory
+// Collect whole files which belong to the src directory
 // example 주소_경기도.txt 주소_강원도.txt -----> 주소.txt
-//
-func (fc *FileCollector) Aggregate() {
+func (fc *FileCollector) Collect() {
 	if len(fc.FromEncoding) > 0 {
-		fc.merge(makeEncodingFilter(fc.FromEncoding))
+		fc.merge(createEncodingFilter(fc.FromEncoding))
 	} else {
 		fc.merge()
 	}
@@ -62,6 +61,29 @@ func (fc *FileCollector) NewReader(filePhase FilePhase) (io.Reader, error) {
 type workableFile struct {
 	file      os.DirEntry
 	filePhase FilePhase
+}
+
+type workableFileGroups map[string][]workableFile
+
+func (fc *FileCollector) merge(filters ...func(bytes []byte) ([]byte, error)) {
+
+	var wg sync.WaitGroup
+
+	workableFileGroups := fc.prepareWorkableGroups()
+
+	wg.Add(len(workableFileGroups))
+
+	for _, workableFiles := range workableFileGroups {
+		workableFiles := workableFiles
+		go func() {
+			for _, f := range workableFiles {
+				fc.copyFile(f, filters...)
+			}
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
 }
 
 func (fc *FileCollector) copyFile(wf workableFile, filters ...func(bytes []byte) ([]byte, error)) {
@@ -116,29 +138,6 @@ func (fc *FileCollector) copyFile(wf workableFile, filters ...func(bytes []byte)
 	}
 }
 
-type workableFileGroups map[string][]workableFile
-
-func (fc *FileCollector) merge(filters ...func(bytes []byte) ([]byte, error)) {
-
-	var wg sync.WaitGroup
-
-	workableFileGroups := fc.prepareWorkableGroups()
-
-	wg.Add(len(workableFileGroups))
-
-	for _, workableFile := range workableFileGroups {
-
-		go func() {
-			for _, f := range workableFile {
-				fc.copyFile(f, filters...)
-				wg.Done()
-			}
-		}()
-	}
-
-	wg.Wait()
-}
-
 func (fc *FileCollector) prepareWorkableGroups() workableFileGroups {
 
 	ret := workableFileGroups{}
@@ -160,9 +159,7 @@ func (fc *FileCollector) prepareWorkableGroups() workableFileGroups {
 			workableFiles = ret[filePhase.PrefixName]
 		}
 
-		workableFiles = append(workableFiles, workableFile{file: file, filePhase: *filePhase})
-
-		ret[filePhase.PrefixName] = workableFiles
+		ret[filePhase.PrefixName] = append(workableFiles, workableFile{file: file, filePhase: *filePhase})
 	}
 
 	return ret
@@ -178,14 +175,9 @@ func (fc *FileCollector) matchFilePhase(filename string) *FilePhase {
 	return nil
 }
 
-func makeEncodingFilter(encoding string) func(bytes []byte) ([]byte, error) {
-	switch strings.ToUpper(encoding) {
-	case "EUC-KR":
-		return func(bytes []byte) ([]byte, error) {
-			str, err := iconv.ConvertString(string(bytes), encoding, "utf-8")
-			return []byte(str), err
-		}
-	default:
-		panic("unsupported encoding")
+func createEncodingFilter(encoding string) func(bytes []byte) ([]byte, error) {
+	return func(bytes []byte) ([]byte, error) {
+		str, err := iconv.ConvertString(string(bytes), encoding, "utf-8")
+		return []byte(str), err
 	}
 }

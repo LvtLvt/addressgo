@@ -40,7 +40,9 @@ func main() {
 
 	os.RemoveAll(dest)
 
-	aggregator.Aggregate()
+	aggregator.Collect()
+
+	// join
 
 	//println("finished....")
 	//// TODO: indexing
