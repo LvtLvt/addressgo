@@ -12,21 +12,25 @@ var dest = pwd + "/result"
 var 주소 = data.FilePhase{
 	PrefixName: "주소",
 	CsvHead:    meta.CsvHead["주소"],
+	CsvChan:    make(chan meta.Juso),
 }
 
 var 지번 = data.FilePhase{
 	PrefixName: "지번",
 	CsvHead:    meta.CsvHead["지번"],
+	CsvChan:    make(chan meta.Jibun),
 }
 
 var 부가정보 = data.FilePhase{
 	PrefixName: "부가정보",
 	CsvHead:    meta.CsvHead["부가정보"],
+	CsvChan:    make(chan meta.Buga),
 }
 
 var 개선 = data.FilePhase{
 	PrefixName: "개선",
 	CsvHead:    meta.CsvHead["개선"],
+	CsvChan:    make(chan meta.Doro),
 }
 
 var aggregator data.Collector = &data.FileCollector{

@@ -15,7 +15,7 @@ const (
 )
 
 var (
-	DEFAULT_BUFFER_SIZE = 1024 * 1024
+	DefaultBufferSize = 1024 * 1024
 )
 
 type Collector interface {
@@ -26,6 +26,8 @@ type Collector interface {
 type FilePhase struct {
 	PrefixName string
 	CsvHead    []string
+	CsvChan    interface{}
+	idFieldIdx int
 }
 
 func (fp *FilePhase) GetCsvHeadStr() string {
@@ -97,7 +99,7 @@ func (fc *FileCollector) copyFile(wf workableFile, filters ...func(bytes []byte)
 	defer rFile.Close()
 	defer wFile.Close()
 
-	var bytes = make([]byte, DEFAULT_BUFFER_SIZE)
+	var bytes = make([]byte, DefaultBufferSize)
 
 	// TODO: move to the place where before execution
 	fileInfo, _ := wFile.Stat()
@@ -155,8 +157,8 @@ func (fc *FileCollector) prepareWorkableGroups() workableFileGroups {
 		workableFiles, isExists := ret[filePhase.PrefixName]
 
 		if !isExists {
-			ret[filePhase.PrefixName] = []workableFile{}
-			workableFiles = ret[filePhase.PrefixName]
+			workableFiles = []workableFile{}
+			ret[filePhase.PrefixName] = workableFiles
 		}
 
 		ret[filePhase.PrefixName] = append(workableFiles, workableFile{file: file, filePhase: *filePhase})
