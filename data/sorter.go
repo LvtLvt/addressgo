@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 type Sorter interface {
@@ -120,9 +119,8 @@ func (f FileSorter) SetId() {
 }
 
 type ShardService struct {
-	shardInfo          ShardInfo
-	fileCashStoreMutex sync.RWMutex
-	fileCashStore      map[string]*os.File
+	shardInfo     ShardInfo
+	fileCashStore map[string]*os.File
 }
 
 func (ss *ShardService) ParseShardId(rowKey string, metaName string) string {
