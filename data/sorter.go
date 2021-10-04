@@ -5,27 +5,18 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
-	"strconv"
 	"strings"
 )
-
-type Sorter interface {
-	Sort()
-	Join()
-	FindById()
-	SetId()
-}
 
 type FileSorter struct {
 	Source       string
 	Dest         string
-	FilePhases   []FilePhase
+	FilePhase    FilePhase
 	shardService ShardService
 	OnComplete   func()
 }
 
-func NewFileSorter(source, dest string, numOfShards int, numOfCache int) FileSorter {
+func NewFileSorter(filePhase FilePhase, source, dest string, numOfShards int, numOfCache int) FileSorter {
 	if numOfShards == 0 || numOfShards > 50 {
 		fmt.Printf("numOfShards should be between 1 and 50, but your value was %d", numOfShards)
 		numOfShards = 10
@@ -44,17 +35,19 @@ func NewFileSorter(source, dest string, numOfShards int, numOfCache int) FileSor
 				NumOfShards: numOfShards,
 				Dest:        dest,
 			},
-			fileCashStore: map[string]*os.File{},
+			fileCashStore:     map[string]*os.File{},
+			isFileCashEnabled: true,
 		},
+		FilePhase: filePhase,
 	}
 
 	return sorter
 }
 
-func (f FileSorter) Sort(fp FilePhase) {
+func (f FileSorter) Sort() {
 	os.Mkdir(f.Dest, DefaultFileMode)
 
-	rFile, _ := os.OpenFile(f.Source+"/"+fp.GetFilename(), DefaultFileFlag, DefaultFileMode)
+	rFile, _ := os.OpenFile(f.Source+"/"+f.FilePhase.GetFilename(), DefaultFileFlag, DefaultFileMode)
 	defer rFile.Close()
 
 	reader := csv.NewReader(rFile)
@@ -68,82 +61,111 @@ func (f FileSorter) Sort(fp FilePhase) {
 			break
 		}
 
-		f.doSort(record, fp)
+		f.bucketize(record, f.FilePhase)
 	}
+
+	f.doSort()
 
 	if f.OnComplete != nil {
 		f.OnComplete()
 	}
 }
 
-func (f FileSorter) doSort(record []string, filePhase FilePhase) {
+func (f FileSorter) Join(targetSorter *FileSorter) {
+	// turn off cashStore to avoid concurrent access conflicts
+	//if targetSorter.shardService.isFileCashEnabled {
+	//	targetSorter.shardService.isFileCashEnabled = false
+	//
+	//	defer func() {targetSorter.shardService.isFileCashEnabled = true}()
+	//}
+
+	groups := groupFilesByPrefix(f.Dest, f.FilePhase)
+	chunkFiles, isExist := groupFilesByPrefix(f.Dest, f.FilePhase)[f.FilePhase.PrefixName]
+
+	println("groups", groups)
+
+	if !isExist {
+		return
+	}
+
+	for _, fileInfo := range chunkFiles {
+		file, _ := os.OpenFile(f.Dest+"/"+fileInfo.file.Name(), DefaultFileFlag, DefaultFileMode)
+
+		reader := newCsvReader(file)
+		writer := newCsvWriter(file)
+		records, _ := reader.ReadAll()
+
+		// inner join
+		for i, record := range records {
+			targetRow := targetSorter.FindById(record[f.FilePhase.IdFieldIdx])
+
+			if targetRow != nil && len(targetRow) > 0 {
+				records[i] = append(record, targetRow...)
+			} else {
+				records[i] = append(record, strings.Split(strings.Join(targetSorter.FilePhase.CsvHead, "|"), "|")...)
+			}
+		}
+
+		file.Truncate(0)
+		writer.WriteAll(records)
+	}
+}
+
+func (f FileSorter) FindById(key string) []string {
+	file := f.shardService.OpenFile(key, f.FilePhase.PrefixName)
+
+	reader := newCsvReader(file)
+	records, _ := reader.ReadAll()
+
+	sorter := &recordSorter{
+		records: &records,
+	}
+
+	return sorter.Search(key)
+}
+
+func (f FileSorter) bucketize(record []string, filePhase FilePhase) {
 	id := record[filePhase.IdFieldIdx]
 	shardFile := f.shardService.OpenFile(id, filePhase.PrefixName)
 
 	// shard's data
-	reader := newCsvReader(shardFile)
-
-	records, _ := reader.ReadAll()
-	records = append(records, record)
-
-	rs := &recordSorter{
-		idFieldIdx: filePhase.IdFieldIdx,
-		records:    &records,
-	}
-
-	sort.Sort(rs)
-
 	writer := newCsvWriter(shardFile)
-
-	for _, record := range records {
-		writer.Write(record)
-	}
-	//writer.WriteAll(records)
+	writer.Write(record)
 	writer.Flush()
+}
+
+func (f FileSorter) doSort() {
+
+	files, isExist := groupFilesByPrefix(f.Dest, f.FilePhase)[f.FilePhase.PrefixName]
+
+	if !isExist {
+		return
+	}
+
+	for _, fileInfo := range files {
+		func() {
+			file, _ := os.OpenFile(f.Dest+"/"+fileInfo.file.Name(), DefaultFileFlag, DefaultFileMode)
+			defer file.Close()
+
+			reader := newCsvReader(file)
+			records, _ := reader.ReadAll()
+
+			rs := &recordSorter{
+				idFieldIdx: f.FilePhase.IdFieldIdx,
+				records:    &records,
+			}
+
+			rs.Sort()
+
+			file.Truncate(0)
+			writer := newCsvWriter(file)
+			writer.WriteAll(records)
+		}()
+	}
 }
 
 func (f FileSorter) getFileFullName(filePhase FilePhase) string {
 	return f.Dest + "/" + filePhase.GetFilename()
-}
-
-func (f FileSorter) Join() {
-	panic("implement me")
-}
-
-func (f FileSorter) FindById() {
-	panic("implement me")
-}
-
-func (f FileSorter) SetId() {
-	panic("implement me")
-}
-
-type ShardService struct {
-	shardInfo     ShardInfo
-	fileCashStore map[string]*os.File
-}
-
-func (ss *ShardService) ParseShardId(rowKey string, metaName string) string {
-	num := ss.shardInfo.NumOfShards
-	return metaName + "_" + strconv.Itoa(hash(rowKey)%num)
-}
-
-func (ss *ShardService) OpenFile(rowKey string, metaName string) *os.File {
-	shardId := ss.ParseShardId(rowKey, metaName)
-
-	file, isExists := ss.fileCashStore[shardId]
-
-	if !isExists {
-		file, _ := os.OpenFile(ss.shardInfo.Dest+"/"+shardId+".txt", DefaultFileFlag, DefaultFileMode)
-		ss.fileCashStore[shardId] = file
-	}
-
-	return file
-}
-
-type ShardInfo struct {
-	NumOfShards int
-	Dest        string
 }
 
 func newCsvReader(f *os.File) *csv.Reader {
@@ -158,29 +180,10 @@ func newCsvWriter(f *os.File) *csv.Writer {
 	return writer
 }
 
-type recordSorter struct {
-	records    *[][]string
-	idFieldIdx int
-}
-
-func (rs recordSorter) Len() int {
-	return len(*rs.records)
-}
-
-func (rs recordSorter) Swap(i, j int) {
-	records := *rs.records
-	records[i], records[j] = records[j], records[i]
-}
-
-func (rs recordSorter) Less(i, j int) bool {
-	records := *rs.records
-	return strings.Compare(records[i][rs.idFieldIdx], records[j][rs.idFieldIdx]) == -1
-}
-
 func hash(key string) int {
 	h := 0
 	for i := 0; i < len(key); i++ {
 		h = 31*h + int(key[i])
 	}
-	return h << 1
+	return h
 }

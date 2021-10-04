@@ -70,7 +70,7 @@ func (fc *FileCollector) merge(filters ...func(bytes []byte) ([]byte, error)) {
 
 	var wg sync.WaitGroup
 
-	workableFileGroups := fc.prepareWorkableGroups()
+	workableFileGroups := groupFilesByPrefix(fc.Src, fc.FilePhases...)
 
 	wg.Add(len(workableFileGroups))
 
@@ -116,12 +116,7 @@ func (fc *FileCollector) copyFile(wf workableFile, filters ...func(bytes []byte)
 
 		// do filter
 		for _, filter := range filters {
-			out2, err := filter(out)
-			if err != nil {
-				println("err....")
-				println(err.Error())
-			}
-			out = out2
+			out, _ = filter(out)
 		}
 
 		if err != nil {
@@ -138,23 +133,23 @@ func (fc *FileCollector) copyFile(wf workableFile, filters ...func(bytes []byte)
 	}
 }
 
-func (fc *FileCollector) prepareWorkableGroups() workableFileGroups {
+func groupFilesByPrefix(src string, filePhases ...FilePhase) workableFileGroups {
 
 	ret := workableFileGroups{}
+	files, _ := os.ReadDir(src)
 
-	files, _ := os.ReadDir(fc.Src)
 	for _, file := range files {
 		var filePhase *FilePhase
 		if file.IsDir() {
 			continue
 		}
-		if filePhase = fc.matchFilePhase(file.Name()); filePhase == nil {
+		if filePhase = matchFilePhase(file.Name(), filePhases...); filePhase == nil {
 			continue
 		}
 
-		workableFiles, isExists := ret[filePhase.PrefixName]
+		workableFiles, isExist := ret[filePhase.PrefixName]
 
-		if !isExists {
+		if !isExist {
 			workableFiles = []workableFile{}
 			ret[filePhase.PrefixName] = workableFiles
 		}
@@ -165,13 +160,12 @@ func (fc *FileCollector) prepareWorkableGroups() workableFileGroups {
 	return ret
 }
 
-func (fc *FileCollector) matchFilePhase(filename string) *FilePhase {
-	for _, filePhase := range fc.FilePhases {
+func matchFilePhase(filename string, filePhases ...FilePhase) *FilePhase {
+	for _, filePhase := range filePhases {
 		if strings.HasPrefix(filename, filePhase.PrefixName+"_") {
 			return &filePhase
 		}
 	}
-
 	return nil
 }
 

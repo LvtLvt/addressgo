@@ -4,65 +4,85 @@ import (
 	"csvgo/data"
 	"csvgo/data/meta"
 	"os"
-	"sync"
 )
 
 var pwd, _ = os.Getwd()
 var dest = pwd + "/result"
 
-var 주소 = data.FilePhase{
+var juso = data.FilePhase{
 	PrefixName: "주소",
 	CsvHead:    meta.CsvHead["주소"],
 	IdFieldIdx: 0,
 }
 
-var 지번 = data.FilePhase{
+var jibun = data.FilePhase{
 	PrefixName: "지번",
 	CsvHead:    meta.CsvHead["지번"],
+	IdFieldIdx: 0,
 }
 
-var 부가정보 = data.FilePhase{
+var buga = data.FilePhase{
 	PrefixName: "부가정보",
 	CsvHead:    meta.CsvHead["부가정보"],
+	IdFieldIdx: 0,
 }
 
-var 개선 = data.FilePhase{
+var doro = data.FilePhase{
 	PrefixName: "개선",
 	CsvHead:    meta.CsvHead["개선"],
+	IdFieldIdx: 0,
 }
 
-var aggregator data.Collector = &data.FileCollector{
+var collector data.Collector = &data.FileCollector{
 	Src:          pwd + "/juso",
 	Dest:         dest,
-	FilePhases:   []data.FilePhase{주소, 지번, 부가정보, 개선},
+	FilePhases:   []data.FilePhase{juso, jibun, buga, doro},
 	FromEncoding: "CP949",
 }
 
 func main() {
 
-	os.RemoveAll(dest)
+	//os.RemoveAll(dest)
 
-	aggregator.Collect()
+	// do collect seperated files and encode them as utf-8
+	//collector.Collect()
 
 	numOfShards := 5
 
-	var wg sync.WaitGroup
+	// do sort
+	//var wg sync.WaitGroup
 	source := dest
-	wg.Add(4)
-	jusoSorter := data.NewFileSorter(source, source+"/chunks", numOfShards, 5)
-	jibunSorter := data.NewFileSorter(source, source+"/chunks", numOfShards, 5)
-	bugaSorter := data.NewFileSorter(source, source+"/chunks", numOfShards, 5)
-	doroSorter := data.NewFileSorter(source, source+"/chunks", numOfShards, 5)
+	//wg.Add(4)
+	jusoSorter := data.NewFileSorter(juso, source, source+"/chunks", numOfShards, 5)
+	jibunSorter := data.NewFileSorter(jibun, source, source+"/chunks", numOfShards, 5)
+	//bugaSorter := data.NewFileSorter(buga, source, source+"/chunks", numOfShards, 5)
+	//doroSorter := data.NewFileSorter(doro, source, source+"/chunks", numOfShards, 5)
+	//
+	//jusoSorter.OnComplete = func() { wg.Done() }
+	//jibunSorter.OnComplete = func() { wg.Done() }
+	//bugaSorter.OnComplete = func() { wg.Done() }
+	//doroSorter.OnComplete = func() { wg.Done() }
+	//
+	//go jusoSorter.Sort()
+	//go jibunSorter.Sort()
+	//go bugaSorter.Sort()
+	//go doroSorter.Sort()
 
-	jusoSorter.OnComplete = func() { wg.Done() }
-	jibunSorter.OnComplete = func() { wg.Done() }
-	bugaSorter.OnComplete = func() { wg.Done() }
-	doroSorter.OnComplete = func() { wg.Done() }
+	//46
 
-	go jusoSorter.Sort(주소)
-	go jibunSorter.Sort(지번)
-	go bugaSorter.Sort(부가정보)
-	go doroSorter.Sort(개선)
+	//wg.Wait()
 
-	wg.Wait()
+	jibunSorter.Join(&jusoSorter)
+
+	//
+	//file, _ := os.OpenFile(pwd + "/result" + "/chunks" + "지번_-1.txt", data.DefaultFileFlag, data.DefaultFileMode)
+	//reader := csv.NewReader(file)
+	//reader.Comma = '|'
+	//
+	//records, _ := reader.ReadAll()
+	//
+	//println(sort.SliceIsSorted(records, func(i, j int) bool {
+	//	return strings.Compare(records[i][0], records[j][0]) == 1
+	//}))
+
 }
