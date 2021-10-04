@@ -8,6 +8,66 @@ var CsvHead = map[string][]string{
 	"지번":   {"관리번호", "일련번호", "법정동코드", "시도명", "시군구명", "법정읍면동명", "법정리명", "산여부", "지번본번", "지번부번", "대표여부"},
 }
 
+const (
+	Jibun_관리번호 = iota
+	Jibun_일련번호
+	Jibun_법정동코드
+	Jibun_시도명
+	JIbun_시군구명
+	Jibun_법정읍면동명
+	JIbun_법정리명
+	Jibun_산여부
+	Jibun_지번본번
+	Jibun_지번부번
+	Jibun_대표여부
+)
+
+const (
+	Buga_관리번호 = iota
+	Buga_행정동코드
+	Buga_행정동명
+	Buga_우편번호
+	Buga_우편번호일련번호
+	Buga_다량배달처명
+	Buga_건축물대장건물명
+	Buga_시군구건물명
+	Buga_공동주택여부
+)
+
+const (
+	Doro_도로명코드 = iota
+	Doro_도로명
+	Doro_도로명로마자
+	Doro_읍면동일련번호
+	Doro_시도명
+	Doro_시도로마자
+	Doro_시군구명
+	Doro_시군구로마자
+	Doro_읍면동명
+	Doro_읍면동로마자
+	Doro_읍면동구분
+	Doro_읍면동코드
+	Doro_사용여부
+	Doro_변경사유
+	Doro_변경이력정보
+	Doro_고시일자
+	Doro_말소일자
+)
+
+const (
+	Juso_관리번호 = iota
+	Juso_도로명코드
+	Juso_읍면동일련번호
+	Juso_지하여부
+	Juso_건물본번
+	Juso_건물부번
+	Juso_기초구역번호
+	Juso_변경사유코드
+	Juso_고시일자
+	Juso_변경전도로명주소
+	Juso_상세주소부여여부
+)
+
 type Juso struct {
 	A_관리번호     string `csv:"관리번호"`
 	A_도로명코드    string `csv:"도로명코드"`

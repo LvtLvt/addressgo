@@ -82,33 +82,33 @@ func (f FileSorter) Join(
 	//	defer func() {targetSorter.shardService.isFileCashEnabled = true}()
 	//}
 
-	groups := groupFilesByPrefix(f.Dest, f.FilePhase)
 	chunkFiles, isExist := groupFilesByPrefix(f.Dest, f.FilePhase)[f.FilePhase.PrefixName]
-
-	println("groups", groups)
 
 	if !isExist {
 		return
 	}
 
 	for _, fileInfo := range chunkFiles {
-		file, _ := os.OpenFile(f.Dest+"/"+fileInfo.file.Name(), DefaultFileFlag, DefaultFileMode)
+		func() {
+			file, _ := os.OpenFile(f.Dest+"/"+fileInfo.file.Name(), DefaultFileFlag, DefaultFileMode)
+			defer file.Close()
 
-		reader := newCsvReader(file)
-		writer := newCsvWriter(file)
-		records, _ := reader.ReadAll()
+			reader := newCsvReader(file)
+			writer := newCsvWriter(file)
+			records, _ := reader.ReadAll()
 
-		// inner join
-		for i, record := range records {
-			targetRow := targetSorter.FindById(record[f.FilePhase.IdFieldIdx])
-			if targetRow != nil {
-				records[i] = onMatch(record, targetRow)
+			// inner join
+			for i, record := range records {
+				targetRow := targetSorter.FindById(record[f.FilePhase.IdFieldIdx])
+				if targetRow != nil {
+					records[i] = onMatch(record, targetRow)
+				}
+				records[i] = onNotFound(record)
 			}
-			records[i] = onNotFound(record)
-		}
 
-		file.Truncate(0)
-		writer.WriteAll(records)
+			file.Truncate(0)
+			writer.WriteAll(records)
+		}()
 	}
 }
 
