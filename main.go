@@ -3,9 +3,6 @@ package main
 import (
 	"csvgo/data"
 	"csvgo/data/meta"
-	"encoding/csv"
-	"github.com/gocarina/gocsv"
-	"io"
 	"os"
 )
 
@@ -32,7 +29,7 @@ var 개선 = data.FilePhase{
 	CsvHead:    meta.CsvHead["개선"],
 }
 
-var aggregator data.Aggregator = &data.FileAggregator{
+var aggregator data.Collector = &data.FileCollector{
 	Src:          pwd + "/juso",
 	Dest:         dest,
 	FilePhases:   []data.FilePhase{주소, 지번, 부가정보, 개선},
@@ -45,30 +42,30 @@ func main() {
 
 	aggregator.Aggregate()
 
-	println("finished....")
-	// TODO: indexing
-
-	gocsv.SetCSVReader(func(in io.Reader) gocsv.CSVReader {
-		r := csv.NewReader(in)
-		r.LazyQuotes = true
-		r.Comma = '|'
-		return r
-	})
-	var jusoArr []meta.Juso
-
-	jusoFile, _ := os.OpenFile(dest+"/"+주소.GetFilename(), data.DefaultFileFlag, data.DefaultFileMode)
-	err := gocsv.UnmarshalFile(jusoFile, &jusoArr)
-	if err != nil {
-		return
-	}
-
-	c := make(chan meta.Juso)
-	gocsv.UnmarshalToChan(jusoFile, c)
-
-	println(len(jusoArr))
-
-	csvReader := csv.NewReader(jusoFile)
-	csvReader.ReuseRecord = true
+	//println("finished....")
+	//// TODO: indexing
+	//
+	//gocsv.SetCSVReader(func(in io.Reader) gocsv.CSVReader {
+	//	r := csv.NewReader(in)
+	//	r.LazyQuotes = true
+	//	r.Comma = '|'
+	//	return r
+	//})
+	//var jusoArr []meta.Juso
+	//
+	//jusoFile, _ := os.OpenFile(dest+"/"+주소.GetFilename(), data.DefaultFileFlag, data.DefaultFileMode)
+	//err := gocsv.UnmarshalFile(jusoFile, &jusoArr)
+	//if err != nil {
+	//	return
+	//}
+	//
+	//c := make(chan meta.Juso)
+	//gocsv.UnmarshalToChan(jusoFile, c)
+	//
+	//println(len(jusoArr))
+	//
+	//csvReader := csv.NewReader(jusoFile)
+	//csvReader.ReuseRecord = true
 
 	//file, err := os.OpenFile("주소.txt", os.O_RDWR|os.O_CREATE, os.ModePerm)
 	//if err != nil {

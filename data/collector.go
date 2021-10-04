@@ -14,7 +14,7 @@ const (
 	DefaultFileMode = os.ModePerm
 )
 
-type Aggregator interface {
+type Collector interface {
 	Aggregate()
 	NewReader(filePhase FilePhase) (io.Reader, error)
 }
@@ -32,7 +32,7 @@ func (fp *FilePhase) GetFilename() string {
 	return fp.PrefixName + ".txt"
 }
 
-type FileAggregator struct {
+type FileCollector struct {
 	Src          string
 	Dest         string
 	FilePhases   []FilePhase
@@ -43,7 +43,7 @@ type FileAggregator struct {
 // Aggregate whole files which belong to the src directory
 // example 주소_경기도.txt 주소_강원도.txt -----> 주소.txt
 //
-func (fa *FileAggregator) Aggregate() {
+func (fa *FileCollector) Aggregate() {
 	if len(fa.FromEncoding) > 0 {
 		fa.merge(makeEncodingFilter(fa.FromEncoding))
 	} else {
@@ -51,42 +51,29 @@ func (fa *FileAggregator) Aggregate() {
 	}
 }
 
-func (fa *FileAggregator) NewReader(filePhase FilePhase) (io.Reader, error) {
+func (fa *FileCollector) NewReader(filePhase FilePhase) (io.Reader, error) {
 	return os.OpenFile(fa.Dest+"/"+filePhase.PrefixName+".txt", DefaultFileFlag, DefaultFileMode)
 }
 
-type workableFile struct {
+type workableFileGroups struct {
 	file      os.DirEntry
 	filePhase FilePhase
 }
 
-func (fa *FileAggregator) merge(filters ...func(bytes []byte) ([]byte, error)) {
-	files, _ := os.ReadDir(fa.Src)
-
-	println(len(files))
+func (fa *FileCollector) merge(filters ...func(bytes []byte) ([]byte, error)) {
 
 	var wg sync.WaitGroup
-	var workableFiles []workableFile
 
-	for _, file := range files {
-		var filePhase *FilePhase
-		if file.IsDir() {
-			continue
-		}
-		if filePhase = fa.matchFilePhase(file.Name()); filePhase == nil {
-			continue
-		}
+	workableFileGroups := fa.prepareWorkableGroups()
 
-		workableFiles = append(workableFiles, workableFile{file: file, filePhase: *filePhase})
-	}
+	wg.Add(len(workableFileGroups))
 
-	wg.Add(len(workableFiles))
-
-	for _, workableFile := range workableFiles {
+	for _, workableFile := range workableFileGroups {
 		file := workableFile.file
 		filePhase := workableFile.filePhase
 		go func() {
 			rFile, _ := os.OpenFile(fa.Src+"/"+file.Name(), DefaultFileFlag, DefaultFileMode)
+			rFileState, _ := rFile.Stat()
 
 			_ = os.Mkdir(fa.Dest, DefaultFileMode)
 			wFile, _ := os.OpenFile(fa.Dest+"/"+filePhase.PrefixName+".txt", DefaultFileFlag, DefaultFileMode)
@@ -95,7 +82,7 @@ func (fa *FileAggregator) merge(filters ...func(bytes []byte) ([]byte, error)) {
 			defer wFile.Close()
 			defer wg.Done()
 
-			var bytes = make([]byte, 1024*1000*1000)
+			var bytes = make([]byte, rFileState.Size())
 
 			// TODO: move to the place where before execution
 			fileInfo, _ := wFile.Stat()
@@ -140,7 +127,27 @@ func (fa *FileAggregator) merge(filters ...func(bytes []byte) ([]byte, error)) {
 	wg.Wait()
 }
 
-func (fa *FileAggregator) matchFilePhase(filename string) *FilePhase {
+func (fa *FileCollector) prepareWorkableGroups() []workableFileGroups {
+
+	var ret []workableFileGroups
+
+	files, _ := os.ReadDir(fa.Src)
+	for _, file := range files {
+		var filePhase *FilePhase
+		if file.IsDir() {
+			continue
+		}
+		if filePhase = fa.matchFilePhase(file.Name()); filePhase == nil {
+			continue
+		}
+
+		ret = append(ret, workableFileGroups{file: file, filePhase: *filePhase})
+	}
+
+	return ret
+}
+
+func (fa *FileCollector) matchFilePhase(filename string) *FilePhase {
 	for _, filePhase := range fa.FilePhases {
 		if strings.HasPrefix(filename, filePhase.PrefixName+"_") {
 			return &filePhase
