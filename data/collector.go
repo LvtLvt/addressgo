@@ -171,8 +171,6 @@ func matchFilePhase(filename string, filePhases ...FilePhase) *FilePhase {
 
 func createEncodingFilter(encoding string) func(bytes []byte) ([]byte, error) {
 	return func(bytes []byte) ([]byte, error) {
-		//out := make([]byte, DefaultBufferSize)
-		//_, _, err := iconv.Convert(bytes, out, encoding, "utf-8")
 		str, err := iconv.ConvertString(string(bytes), encoding, "utf-8")
 		return []byte(str), err
 	}

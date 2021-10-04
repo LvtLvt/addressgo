@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 )
 
 type FileSorter struct {
@@ -71,7 +70,11 @@ func (f FileSorter) Sort() {
 	}
 }
 
-func (f FileSorter) Join(targetSorter *FileSorter) {
+func (f FileSorter) Join(
+	targetSorter *FileSorter,
+	onMatch func(record []string, matchedRecord []string) []string,
+	onNotFound func(record []string) []string,
+) {
 	// turn off cashStore to avoid concurrent access conflicts
 	//if targetSorter.shardService.isFileCashEnabled {
 	//	targetSorter.shardService.isFileCashEnabled = false
@@ -98,12 +101,10 @@ func (f FileSorter) Join(targetSorter *FileSorter) {
 		// inner join
 		for i, record := range records {
 			targetRow := targetSorter.FindById(record[f.FilePhase.IdFieldIdx])
-
-			if targetRow != nil && len(targetRow) > 0 {
-				records[i] = append(record, targetRow...)
-			} else {
-				records[i] = append(record, strings.Split(strings.Join(targetSorter.FilePhase.CsvHead, "|"), "|")...)
+			if targetRow != nil {
+				records[i] = onMatch(record, targetRow)
 			}
+			records[i] = onNotFound(record)
 		}
 
 		file.Truncate(0)

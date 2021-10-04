@@ -72,7 +72,14 @@ func main() {
 
 	//wg.Wait()
 
-	jibunSorter.Join(&jusoSorter)
+	jibunSorter.Join(&jusoSorter,
+		func(record []string, matchedRecord []string) []string {
+			return nil
+		},
+		func(record []string) []string {
+			return nil
+		},
+	)
 
 	//
 	//file, _ := os.OpenFile(pwd + "/result" + "/chunks" + "지번_-1.txt", data.DefaultFileFlag, data.DefaultFileMode)
