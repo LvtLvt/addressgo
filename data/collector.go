@@ -14,6 +14,10 @@ const (
 	DefaultFileMode = os.ModePerm
 )
 
+var (
+	DEFAULT_BUFFER_SIZE = 1024 * 1024
+)
+
 type Collector interface {
 	Aggregate()
 	NewReader(filePhase FilePhase) (io.Reader, error)
@@ -43,83 +47,91 @@ type FileCollector struct {
 // Aggregate whole files which belong to the src directory
 // example 주소_경기도.txt 주소_강원도.txt -----> 주소.txt
 //
-func (fa *FileCollector) Aggregate() {
-	if len(fa.FromEncoding) > 0 {
-		fa.merge(makeEncodingFilter(fa.FromEncoding))
+func (fc *FileCollector) Aggregate() {
+	if len(fc.FromEncoding) > 0 {
+		fc.merge(makeEncodingFilter(fc.FromEncoding))
 	} else {
-		fa.merge()
+		fc.merge()
 	}
 }
 
-func (fa *FileCollector) NewReader(filePhase FilePhase) (io.Reader, error) {
-	return os.OpenFile(fa.Dest+"/"+filePhase.PrefixName+".txt", DefaultFileFlag, DefaultFileMode)
+func (fc *FileCollector) NewReader(filePhase FilePhase) (io.Reader, error) {
+	return os.OpenFile(fc.Dest+"/"+filePhase.PrefixName+".txt", DefaultFileFlag, DefaultFileMode)
 }
 
-type workableFileGroups struct {
+type workableFile struct {
 	file      os.DirEntry
 	filePhase FilePhase
 }
 
-func (fa *FileCollector) merge(filters ...func(bytes []byte) ([]byte, error)) {
+func (fc *FileCollector) copyFile(wf workableFile, filters ...func(bytes []byte) ([]byte, error)) {
+	file := wf.file
+	filePhase := wf.filePhase
+	rFile, _ := os.OpenFile(fc.Src+"/"+file.Name(), DefaultFileFlag, DefaultFileMode)
+
+	_ = os.Mkdir(fc.Dest, DefaultFileMode)
+	wFile, _ := os.OpenFile(fc.Dest+"/"+filePhase.PrefixName+".txt", DefaultFileFlag, DefaultFileMode)
+
+	defer rFile.Close()
+	defer wFile.Close()
+
+	var bytes = make([]byte, DEFAULT_BUFFER_SIZE)
+
+	// TODO: move to the place where before execution
+	fileInfo, _ := wFile.Stat()
+	if fileInfo.Size() == 0 {
+		wFile.WriteString(filePhase.GetCsvHeadStr())
+	}
+
+	for {
+		n, err := rFile.Read(bytes)
+
+		if err != nil {
+			if err == io.EOF {
+				break
+			} else {
+				_ = fmt.Errorf("while reading, error occured cause: %s", err.Error())
+				os.Exit(-1)
+			}
+		}
+
+		var out = bytes[:n]
+
+		// do filter
+		for _, filter := range filters {
+			out, _ = filter(out)
+		}
+
+		if err != nil {
+			_ = fmt.Errorf("while converting, error occured cause: %s", err.Error())
+			os.Exit(-1)
+		}
+
+		_, err = wFile.Write(out)
+
+		if err != nil {
+			_ = fmt.Errorf("while writing, error occured cause: %s", err.Error())
+			os.Exit(-1)
+		}
+	}
+}
+
+type workableFileGroups map[string][]workableFile
+
+func (fc *FileCollector) merge(filters ...func(bytes []byte) ([]byte, error)) {
 
 	var wg sync.WaitGroup
 
-	workableFileGroups := fa.prepareWorkableGroups()
+	workableFileGroups := fc.prepareWorkableGroups()
 
 	wg.Add(len(workableFileGroups))
 
 	for _, workableFile := range workableFileGroups {
-		file := workableFile.file
-		filePhase := workableFile.filePhase
+
 		go func() {
-			rFile, _ := os.OpenFile(fa.Src+"/"+file.Name(), DefaultFileFlag, DefaultFileMode)
-			rFileState, _ := rFile.Stat()
-
-			_ = os.Mkdir(fa.Dest, DefaultFileMode)
-			wFile, _ := os.OpenFile(fa.Dest+"/"+filePhase.PrefixName+".txt", DefaultFileFlag, DefaultFileMode)
-
-			defer rFile.Close()
-			defer wFile.Close()
-			defer wg.Done()
-
-			var bytes = make([]byte, rFileState.Size())
-
-			// TODO: move to the place where before execution
-			fileInfo, _ := wFile.Stat()
-			if fileInfo.Size() == 0 {
-				wFile.WriteString(filePhase.GetCsvHeadStr())
-			}
-
-			for {
-				n, err := rFile.Read(bytes)
-
-				if err != nil {
-					if err == io.EOF {
-						break
-					} else {
-						_ = fmt.Errorf("while reading, error occured cause: %s", err.Error())
-						os.Exit(-1)
-					}
-				}
-
-				var out = bytes[:n]
-
-				// do filter
-				for _, filter := range filters {
-					out, _ = filter(out)
-				}
-
-				if err != nil {
-					_ = fmt.Errorf("while converting, error occured cause: %s", err.Error())
-					os.Exit(-1)
-				}
-
-				_, err = wFile.Write(out)
-
-				if err != nil {
-					_ = fmt.Errorf("while writing, error occured cause: %s", err.Error())
-					os.Exit(-1)
-				}
+			for _, f := range workableFile {
+				fc.copyFile(f, filters...)
+				wg.Done()
 			}
 		}()
 	}
@@ -127,28 +139,37 @@ func (fa *FileCollector) merge(filters ...func(bytes []byte) ([]byte, error)) {
 	wg.Wait()
 }
 
-func (fa *FileCollector) prepareWorkableGroups() []workableFileGroups {
+func (fc *FileCollector) prepareWorkableGroups() workableFileGroups {
 
-	var ret []workableFileGroups
+	ret := workableFileGroups{}
 
-	files, _ := os.ReadDir(fa.Src)
+	files, _ := os.ReadDir(fc.Src)
 	for _, file := range files {
 		var filePhase *FilePhase
 		if file.IsDir() {
 			continue
 		}
-		if filePhase = fa.matchFilePhase(file.Name()); filePhase == nil {
+		if filePhase = fc.matchFilePhase(file.Name()); filePhase == nil {
 			continue
 		}
 
-		ret = append(ret, workableFileGroups{file: file, filePhase: *filePhase})
+		workableFiles, isExists := ret[filePhase.PrefixName]
+
+		if !isExists {
+			ret[filePhase.PrefixName] = []workableFile{}
+			workableFiles = ret[filePhase.PrefixName]
+		}
+
+		workableFiles = append(workableFiles, workableFile{file: file, filePhase: *filePhase})
+
+		ret[filePhase.PrefixName] = workableFiles
 	}
 
 	return ret
 }
 
-func (fa *FileCollector) matchFilePhase(filename string) *FilePhase {
-	for _, filePhase := range fa.FilePhases {
+func (fc *FileCollector) matchFilePhase(filename string) *FilePhase {
+	for _, filePhase := range fc.FilePhases {
 		if strings.HasPrefix(filename, filePhase.PrefixName+"_") {
 			return &filePhase
 		}
