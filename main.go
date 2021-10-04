@@ -4,6 +4,7 @@ import (
 	"csvgo/data"
 	"csvgo/data/meta"
 	"os"
+	"sync"
 )
 
 var pwd, _ = os.Getwd()
@@ -12,32 +13,29 @@ var dest = pwd + "/result"
 var 주소 = data.FilePhase{
 	PrefixName: "주소",
 	CsvHead:    meta.CsvHead["주소"],
-	CsvChan:    make(chan meta.Juso),
+	IdFieldIdx: 0,
 }
 
 var 지번 = data.FilePhase{
 	PrefixName: "지번",
 	CsvHead:    meta.CsvHead["지번"],
-	CsvChan:    make(chan meta.Jibun),
 }
 
 var 부가정보 = data.FilePhase{
 	PrefixName: "부가정보",
 	CsvHead:    meta.CsvHead["부가정보"],
-	CsvChan:    make(chan meta.Buga),
 }
 
 var 개선 = data.FilePhase{
 	PrefixName: "개선",
 	CsvHead:    meta.CsvHead["개선"],
-	CsvChan:    make(chan meta.Doro),
 }
 
 var aggregator data.Collector = &data.FileCollector{
 	Src:          pwd + "/juso",
 	Dest:         dest,
 	FilePhases:   []data.FilePhase{주소, 지번, 부가정보, 개선},
-	FromEncoding: "euc-kr",
+	FromEncoding: "CP949",
 }
 
 func main() {
@@ -46,62 +44,25 @@ func main() {
 
 	aggregator.Collect()
 
-	// join
+	numOfShards := 5
 
-	//println("finished....")
-	//// TODO: indexing
-	//
-	//gocsv.SetCSVReader(func(in io.Reader) gocsv.CSVReader {
-	//	r := csv.NewReader(in)
-	//	r.LazyQuotes = true
-	//	r.Comma = '|'
-	//	return r
-	//})
-	//var jusoArr []meta.Juso
-	//
-	//jusoFile, _ := os.OpenFile(dest+"/"+주소.GetFilename(), data.DefaultFileFlag, data.DefaultFileMode)
-	//err := gocsv.UnmarshalFile(jusoFile, &jusoArr)
-	//if err != nil {
-	//	return
-	//}
-	//
-	//c := make(chan meta.Juso)
-	//gocsv.UnmarshalToChan(jusoFile, c)
-	//
-	//println(len(jusoArr))
-	//
-	//csvReader := csv.NewReader(jusoFile)
-	//csvReader.ReuseRecord = true
+	var wg sync.WaitGroup
+	source := dest
+	wg.Add(4)
+	jusoSorter := data.NewFileSorter(source, source+"/chunks", numOfShards, 5)
+	jibunSorter := data.NewFileSorter(source, source+"/chunks", numOfShards, 5)
+	bugaSorter := data.NewFileSorter(source, source+"/chunks", numOfShards, 5)
+	doroSorter := data.NewFileSorter(source, source+"/chunks", numOfShards, 5)
 
-	//file, err := os.OpenFile("주소.txt", os.O_RDWR|os.O_CREATE, os.ModePerm)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//defer file.Close()
-	//
-	//jusoArr := []*Juso{}
-	//
-	//gocsv.SetCSVReader(func(in io.Reader) gocsv.CSVReader {
-	//	r := csv.NewReader(in)
-	//	r.LazyQuotes = true
-	//	r.Comma = '|'
-	//	return r
-	//})
-	//
-	//if err := gocsv.UnmarshalFile(file, &jusoArr); err != nil {
-	//	panic(err)
-	//}
-	//
-	//println(len(jusoArr))
-	//
-	////reader, err := iconv.NewReader(file, "euc-kr", "utf-8")
-	////if err != nil {
-	////	return
-	////}
-	//
-	////os.WriteFile("result.txt", os.O_RDWR|os.O_CREATE, os.ModePerm)
-	//
-	//println("end...")
-	//
-	//jusoArr = jusoArr[0:6]
+	jusoSorter.OnComplete = func() { wg.Done() }
+	jibunSorter.OnComplete = func() { wg.Done() }
+	bugaSorter.OnComplete = func() { wg.Done() }
+	doroSorter.OnComplete = func() { wg.Done() }
+
+	go jusoSorter.Sort(주소)
+	go jibunSorter.Sort(지번)
+	go bugaSorter.Sort(부가정보)
+	go doroSorter.Sort(개선)
+
+	wg.Wait()
 }

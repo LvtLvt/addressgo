@@ -26,8 +26,7 @@ type Collector interface {
 type FilePhase struct {
 	PrefixName string
 	CsvHead    []string
-	CsvChan    interface{}
-	idFieldIdx int
+	IdFieldIdx int
 }
 
 func (fp *FilePhase) GetCsvHeadStr() string {
@@ -96,16 +95,10 @@ func (fc *FileCollector) copyFile(wf workableFile, filters ...func(bytes []byte)
 	_ = os.Mkdir(fc.Dest, DefaultFileMode)
 	wFile, _ := os.OpenFile(fc.Dest+"/"+filePhase.PrefixName+".txt", DefaultFileFlag, DefaultFileMode)
 
-	defer rFile.Close()
-	defer wFile.Close()
+	rStat, _ := rFile.Stat()
 
-	var bytes = make([]byte, DefaultBufferSize)
-
-	// TODO: move to the place where before execution
-	fileInfo, _ := wFile.Stat()
-	if fileInfo.Size() == 0 {
-		wFile.WriteString(filePhase.GetCsvHeadStr())
-	}
+	//var bytes = make([]byte, DefaultBufferSize)
+	var bytes = make([]byte, rStat.Size())
 
 	for {
 		n, err := rFile.Read(bytes)
@@ -123,7 +116,12 @@ func (fc *FileCollector) copyFile(wf workableFile, filters ...func(bytes []byte)
 
 		// do filter
 		for _, filter := range filters {
-			out, _ = filter(out)
+			out2, err := filter(out)
+			if err != nil {
+				println("err....")
+				println(err.Error())
+			}
+			out = out2
 		}
 
 		if err != nil {
@@ -179,6 +177,8 @@ func (fc *FileCollector) matchFilePhase(filename string) *FilePhase {
 
 func createEncodingFilter(encoding string) func(bytes []byte) ([]byte, error) {
 	return func(bytes []byte) ([]byte, error) {
+		//out := make([]byte, DefaultBufferSize)
+		//_, _, err := iconv.Convert(bytes, out, encoding, "utf-8")
 		str, err := iconv.ConvertString(string(bytes), encoding, "utf-8")
 		return []byte(str), err
 	}

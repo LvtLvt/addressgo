@@ -7,6 +7,8 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
+	"sync"
 )
 
 type Sorter interface {
@@ -17,29 +19,33 @@ type Sorter interface {
 }
 
 type FileSorter struct {
+	Source       string
 	Dest         string
 	FilePhases   []FilePhase
 	shardService ShardService
+	OnComplete   func()
 }
 
-func NewFileSorter(dest string, numOfShards int, numOfCache int) FileSorter {
+func NewFileSorter(source, dest string, numOfShards int, numOfCache int) FileSorter {
 	if numOfShards == 0 || numOfShards > 50 {
-		fmt.Printf("numOfShards should be between 10 and 50, but your value was %d", numOfShards)
+		fmt.Printf("numOfShards should be between 1 and 50, but your value was %d", numOfShards)
 		numOfShards = 10
 	}
 
 	if numOfCache == 0 || numOfCache > 50 {
-		fmt.Errorf("numOfCache should be between 10 and 50, but your value was %d", numOfCache)
+		fmt.Errorf("numOfCache should be between 1 and 50, but your value was %d", numOfCache)
 		numOfCache = 1
 	}
 
 	sorter := FileSorter{
-		Dest: dest,
+		Source: source,
+		Dest:   dest,
 		shardService: ShardService{
 			shardInfo: ShardInfo{
 				NumOfShards: numOfShards,
 				Dest:        dest,
 			},
+			fileCashStore: map[string]*os.File{},
 		},
 	}
 
@@ -47,40 +53,54 @@ func NewFileSorter(dest string, numOfShards int, numOfCache int) FileSorter {
 }
 
 func (f FileSorter) Sort(fp FilePhase) {
-	fileName := f.getFileFullName(fp)
+	os.Mkdir(f.Dest, DefaultFileMode)
 
-	rFile, _ := os.OpenFile(fileName, DefaultFileFlag, DefaultFileMode)
+	rFile, _ := os.OpenFile(f.Source+"/"+fp.GetFilename(), DefaultFileFlag, DefaultFileMode)
 	defer rFile.Close()
 
 	reader := csv.NewReader(rFile)
 	reader.Comma = '|'
-	reader.ReuseRecord = true
+	//reader.ReuseRecord = true
 
 	for {
 		record, err := reader.Read()
 
 		if record == nil || err == io.EOF {
-			return
+			break
 		}
 
 		f.doSort(record, fp)
 	}
+
+	if f.OnComplete != nil {
+		f.OnComplete()
+	}
 }
 
 func (f FileSorter) doSort(record []string, filePhase FilePhase) {
-	id, _ := strconv.Atoi(record[filePhase.idFieldIdx])
+	id := record[filePhase.IdFieldIdx]
 	shardFile := f.shardService.OpenFile(id, filePhase.PrefixName)
 
 	// shard's data
 	reader := newCsvReader(shardFile)
 
 	records, _ := reader.ReadAll()
+	records = append(records, record)
+
 	rs := &recordSorter{
-		idFieldIdx: filePhase.idFieldIdx,
+		idFieldIdx: filePhase.IdFieldIdx,
 		records:    &records,
 	}
 
 	sort.Sort(rs)
+
+	writer := newCsvWriter(shardFile)
+
+	for _, record := range records {
+		writer.Write(record)
+	}
+	//writer.WriteAll(records)
+	writer.Flush()
 }
 
 func (f FileSorter) getFileFullName(filePhase FilePhase) string {
@@ -100,22 +120,23 @@ func (f FileSorter) SetId() {
 }
 
 type ShardService struct {
-	shardInfo     ShardInfo
-	fileCashStore map[string]*os.File
+	shardInfo          ShardInfo
+	fileCashStoreMutex sync.RWMutex
+	fileCashStore      map[string]*os.File
 }
 
-func (ss *ShardService) ParseShardId(rowKey int, metaName string) string {
+func (ss *ShardService) ParseShardId(rowKey string, metaName string) string {
 	num := ss.shardInfo.NumOfShards
-	return metaName + "_" + strconv.Itoa(rowKey%num)
+	return metaName + "_" + strconv.Itoa(hash(rowKey)%num)
 }
 
-func (ss *ShardService) OpenFile(rowKey int, metaName string) *os.File {
+func (ss *ShardService) OpenFile(rowKey string, metaName string) *os.File {
 	shardId := ss.ParseShardId(rowKey, metaName)
 
 	file, isExists := ss.fileCashStore[shardId]
 
 	if !isExists {
-		file, _ = os.OpenFile(ss.shardInfo.Dest+"/"+shardId, DefaultFileFlag, DefaultFileMode)
+		file, _ := os.OpenFile(ss.shardInfo.Dest+"/"+shardId+".txt", DefaultFileFlag, DefaultFileMode)
 		ss.fileCashStore[shardId] = file
 	}
 
@@ -155,7 +176,13 @@ func (rs recordSorter) Swap(i, j int) {
 
 func (rs recordSorter) Less(i, j int) bool {
 	records := *rs.records
-	left, _ := strconv.Atoi(records[i][rs.idFieldIdx])
-	right, _ := strconv.Atoi(records[j][rs.idFieldIdx])
-	return left < right
+	return strings.Compare(records[i][rs.idFieldIdx], records[j][rs.idFieldIdx]) == -1
+}
+
+func hash(key string) int {
+	h := 0
+	for i := 0; i < len(key); i++ {
+		h = 31*h + int(key[i])
+	}
+	return h << 1
 }
