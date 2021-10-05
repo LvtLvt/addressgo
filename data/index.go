@@ -3,19 +3,18 @@ package data
 import (
 	"encoding/csv"
 	"fmt"
-	"io"
 	"os"
 )
 
-type FileSorter struct {
+type Entity struct {
 	Source       string
 	Dest         string
 	FilePhase    FilePhase
 	shardService ShardService
-	OnComplete   func()
+	records      [][]string
 }
 
-func NewFileSorter(filePhase FilePhase, source, dest string, numOfShards int, numOfCache int) FileSorter {
+func NewFileIndex(filePhase FilePhase, source, dest string, numOfShards int, numOfCache int) Entity {
 	if numOfShards == 0 || numOfShards > 50 {
 		fmt.Printf("numOfShards should be between 1 and 50, but your value was %d", numOfShards)
 		numOfShards = 10
@@ -26,7 +25,7 @@ func NewFileSorter(filePhase FilePhase, source, dest string, numOfShards int, nu
 		numOfCache = 1
 	}
 
-	sorter := FileSorter{
+	sorter := Entity{
 		Source: source,
 		Dest:   dest,
 		shardService: ShardService{
@@ -43,7 +42,19 @@ func NewFileSorter(filePhase FilePhase, source, dest string, numOfShards int, nu
 	return sorter
 }
 
-func (f FileSorter) Sort() {
+func (f *Entity) LoadRecords() {
+	file := f.shardService.OpenFile("0", f.FilePhase.PrefixName)
+	reader := newCsvReader(file)
+	records, _ := reader.ReadAll()
+
+	f.records = records
+}
+
+func (f *Entity) ClearRecords() {
+	f.records = [][]string{}
+}
+
+func (f *Entity) Sort(onComplete func()) {
 	os.Mkdir(f.Dest, DefaultFileMode)
 
 	rFile, _ := os.OpenFile(f.Source+"/"+f.FilePhase.GetFilename(), DefaultFileFlag, DefaultFileMode)
@@ -51,27 +62,22 @@ func (f FileSorter) Sort() {
 
 	reader := csv.NewReader(rFile)
 	reader.Comma = '|'
-	//reader.ReuseRecord = true
 
-	for {
-		record, err := reader.Read()
-
-		if record == nil || err == io.EOF {
-			break
-		}
-
-		f.bucketize(record, f.FilePhase)
-	}
+	records, _ := reader.ReadAll()
+	wFile := f.shardService.OpenFile("0", f.FilePhase.PrefixName)
+	writer := newCsvWriter(wFile)
+	writer.WriteAll(records)
 
 	f.doSort()
 
-	if f.OnComplete != nil {
-		f.OnComplete()
+	if onComplete != nil {
+		onComplete()
+		f.shardService.fileCashStore = map[string]*os.File{}
 	}
 }
 
-func (f FileSorter) Join(
-	targetSorter *FileSorter,
+func (f *Entity) Join(
+	targetSorter *Entity,
 	onMatch func(record []string, matchedRecord []string) []string,
 	onNotFound func(record []string) []string,
 ) {
@@ -81,7 +87,7 @@ func (f FileSorter) Join(
 	//
 	//	defer func() {targetSorter.shardService.isFileCashEnabled = true}()
 	//}
-
+	targetSorter.LoadRecords()
 	chunkFiles, isExist := groupFilesByPrefix(f.Dest, f.FilePhase)[f.FilePhase.PrefixName]
 
 	if !isExist {
@@ -102,32 +108,37 @@ func (f FileSorter) Join(
 				targetRow := targetSorter.FindById(record[f.FilePhase.IdFieldIdx])
 				if targetRow != nil {
 					records[i] = onMatch(record, targetRow)
+				} else {
+					records[i] = onNotFound(record)
 				}
-				records[i] = onNotFound(record)
 			}
 
 			file.Truncate(0)
 			writer.WriteAll(records)
 		}()
 	}
+	targetSorter.ClearRecords()
 }
 
-func (f FileSorter) FindById(key string) []string {
-	file := f.shardService.OpenFile(key, f.FilePhase.PrefixName)
+func (f *Entity) FindById(key string) []string {
+	//file := f.shardService.OpenFile(key, f.FilePhase.PrefixName)
+	//reader := newCsvReader(file)
+	//records, _ := reader.ReadAll()
 
-	reader := newCsvReader(file)
-	records, _ := reader.ReadAll()
+	records := f.records
 
-	sorter := &recordSorter{
-		records: &records,
+	sorter := recordSorter{
+		records:    &records,
+		idFieldIdx: f.FilePhase.IdFieldIdx,
 	}
 
 	return sorter.Search(key)
 }
 
-func (f FileSorter) bucketize(record []string, filePhase FilePhase) {
+func (f *Entity) bucketize(record []string, filePhase FilePhase) {
 	id := record[filePhase.IdFieldIdx]
 	shardFile := f.shardService.OpenFile(id, filePhase.PrefixName)
+	//defer shardFile.Close()
 
 	// shard's data
 	writer := newCsvWriter(shardFile)
@@ -135,7 +146,7 @@ func (f FileSorter) bucketize(record []string, filePhase FilePhase) {
 	writer.Flush()
 }
 
-func (f FileSorter) doSort() {
+func (f *Entity) doSort() {
 
 	files, isExist := groupFilesByPrefix(f.Dest, f.FilePhase)[f.FilePhase.PrefixName]
 
@@ -165,14 +176,14 @@ func (f FileSorter) doSort() {
 	}
 }
 
-func (f FileSorter) getFileFullName(filePhase FilePhase) string {
+func (f *Entity) getFileFullName(filePhase FilePhase) string {
 	return f.Dest + "/" + filePhase.GetFilename()
 }
 
-func newCsvReader(f *os.File) *csv.Reader {
+func newCsvReader(f *os.File) csv.Reader {
 	reader := csv.NewReader(f)
 	reader.Comma = '|'
-	return reader
+	return *reader
 }
 
 func newCsvWriter(f *os.File) *csv.Writer {
@@ -182,9 +193,10 @@ func newCsvWriter(f *os.File) *csv.Writer {
 }
 
 func hash(key string) int {
-	h := 0
-	for i := 0; i < len(key); i++ {
-		h = 31*h + int(key[i])
-	}
-	return h
+	return 0
+	//h := 0
+	//for i := 0; i < len(key); i++ {
+	//	h = 31*h + int(key[i])
+	//}
+	//return h
 }
