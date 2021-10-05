@@ -74,7 +74,7 @@ func main() {
 
 	jibunSorter.Join(&jusoSorter,
 		func(record []string, matchedRecord []string) []string {
-			return append(record, matchedRecord[0])
+			return append(record, matchedRecord[meta.Juso_건물본번], matchedRecord[meta.Juso_건물부번])
 		},
 		func(record []string) []string {
 			return nil
