@@ -1,6 +1,7 @@
 package data
 
 import (
+	"io"
 	"os"
 	"strconv"
 )
@@ -30,6 +31,7 @@ func (ss *ShardService) OpenFile(rowKey string, metaName string) *os.File {
 	}
 
 	file = cashedFile
+	file.Seek(0, io.SeekStart)
 	//} else {
 	//	// evict cache store
 	//	if len(ss.fileCashStore) > 0 {
