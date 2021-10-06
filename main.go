@@ -5,6 +5,7 @@ import (
 	"csvgo/data/meta"
 	"os"
 	"strings"
+	"sync"
 )
 
 var pwd, _ = os.Getwd()
@@ -43,35 +44,28 @@ var collector data.Collector = &data.FileCollector{
 
 func main() {
 
-	//os.RemoveAll(dest)
+	os.RemoveAll(dest)
 
 	// do collect seperated files and encode them as utf-8
-	//collector.Collect()
+	collector.Collect()
 
 	numOfShards := 5
 
 	// do sort
-	//var wg sync.WaitGroup
+	var wg sync.WaitGroup
 	source := dest
-	//wg.Add(4)
+	wg.Add(4)
 	jusoIndex := data.NewFileIndex(juso, source, source+"/chunks", numOfShards, 5)
 	jibunIndex := data.NewFileIndex(jibun, source, source+"/chunks", numOfShards, 5)
 	bugaIndex := data.NewFileIndex(buga, source, source+"/chunks", numOfShards, 5)
 	doroIndex := data.NewFileIndex(doro, source, source+"/chunks", numOfShards, 5)
-	//
-	//jusoIndex.OnComplete = func() { wg.Done() }
-	//jibunIndex.OnComplete = func() { wg.Done() }
-	//bugaIndex.OnComplete = func() { wg.Done() }
-	//doroIndex.OnComplete = func() { wg.Done() }
 
-	//go jusoIndex.Sort(nil)
-	//go jibunIndex.Sort(nil)
+	go jusoIndex.Sort(func() { wg.Done() })
+	go jibunIndex.Sort(func() { wg.Done() })
+	go bugaIndex.Sort(func() { wg.Done() })
+	go doroIndex.Sort(func() { wg.Done() })
 
-	//go jibunIndex.Sort()
-	//go bugaIndex.Sort()
-	//go doroIndex.Sort()
-
-	//wg.Wait()
+	wg.Wait()
 	defaultFieldValue := "0"
 	jusoIndex.FilePhase.IdFieldIdx = 1
 	jusoIndex.Join(&doroIndex,
@@ -164,15 +158,4 @@ func main() {
 			)
 		},
 	)
-
-	//file, _ := os.OpenFile(pwd + "/result" + "/chunks" + "지번_-1.txt", data.DefaultFileFlag, data.DefaultFileMode)
-	//reader := csv.NewReader(file)
-	//reader.Comma = '|'
-	//
-	//records, _ := reader.ReadAll()
-	//
-	//println(sort.SliceIsSorted(records, func(i, j int) bool {
-	//	return strings.Compare(records[i][0], records[j][0]) == 1
-	//}))
-
 }

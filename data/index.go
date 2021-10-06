@@ -7,14 +7,14 @@ import (
 	"os"
 )
 
-type Entity struct {
+type Index struct {
 	Source       string
 	Dest         string
 	FilePhase    FilePhase
 	shardService ShardService
 }
 
-func NewFileIndex(filePhase FilePhase, source, dest string, numOfShards int, numOfCache int) Entity {
+func NewFileIndex(filePhase FilePhase, source, dest string, numOfShards int, numOfCache int) Index {
 	if numOfShards == 0 || numOfShards > 50 {
 		fmt.Printf("numOfShards should be between 1 and 50, but your value was %d", numOfShards)
 		numOfShards = 10
@@ -25,7 +25,7 @@ func NewFileIndex(filePhase FilePhase, source, dest string, numOfShards int, num
 		numOfCache = 1
 	}
 
-	sorter := Entity{
+	sorter := Index{
 		Source: source,
 		Dest:   dest,
 		shardService: ShardService{
@@ -42,7 +42,7 @@ func NewFileIndex(filePhase FilePhase, source, dest string, numOfShards int, num
 	return sorter
 }
 
-func (f Entity) Sort(onComplete func()) {
+func (f Index) Sort(onComplete func()) {
 	os.Mkdir(f.Dest, DefaultFileMode)
 
 	rFile, _ := os.OpenFile(f.Source+"/"+f.FilePhase.GetFilename(), DefaultFileFlag, DefaultFileMode)
@@ -69,8 +69,8 @@ func (f Entity) Sort(onComplete func()) {
 	}
 }
 
-func (f Entity) Join(
-	targetSorter *Entity,
+func (f Index) Join(
+	targetSorter *Index,
 	onMatch func(record []string, matchedRecord []string) []string,
 	onNotFound func(record []string) []string,
 ) {
@@ -112,7 +112,7 @@ func (f Entity) Join(
 	}
 }
 
-func (f Entity) FindById(key string) []string {
+func (f Index) FindById(key string) []string {
 	file := f.shardService.OpenFile(key, f.FilePhase.PrefixName)
 	reader := newCsvReader(file)
 	records, _ := reader.ReadAll()
@@ -125,7 +125,7 @@ func (f Entity) FindById(key string) []string {
 	return sorter.Search(key)
 }
 
-func (f Entity) bucketize(record []string, filePhase FilePhase) {
+func (f Index) bucketize(record []string, filePhase FilePhase) {
 	id := record[filePhase.IdFieldIdx]
 	shardFile := f.shardService.OpenFile(id, filePhase.PrefixName)
 	defer shardFile.Close()
@@ -136,7 +136,7 @@ func (f Entity) bucketize(record []string, filePhase FilePhase) {
 	writer.Flush()
 }
 
-func (f Entity) doSort() {
+func (f Index) doSort() {
 
 	files, isExist := groupFilesByPrefix(f.Dest, f.FilePhase)[f.FilePhase.PrefixName]
 
@@ -166,7 +166,7 @@ func (f Entity) doSort() {
 	}
 }
 
-func (f Entity) getFileFullName(filePhase FilePhase) string {
+func (f Index) getFileFullName(filePhase FilePhase) string {
 	return f.Dest + "/" + filePhase.GetFilename()
 }
 
