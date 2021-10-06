@@ -159,4 +159,5 @@ func main() {
 			)
 		},
 	)
+	bugaIndex.ClearRecords()
 }

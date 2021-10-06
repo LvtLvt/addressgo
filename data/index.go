@@ -11,7 +11,7 @@ type Entity struct {
 	Dest         string
 	FilePhase    FilePhase
 	shardService ShardService
-	records      [][]string
+	Records      [][]string
 }
 
 func NewFileIndex(filePhase FilePhase, source, dest string, numOfShards int, numOfCache int) Entity {
@@ -47,11 +47,11 @@ func (f *Entity) LoadRecords() {
 	reader := newCsvReader(file)
 	records, _ := reader.ReadAll()
 
-	f.records = records
+	f.Records = records
 }
 
 func (f *Entity) ClearRecords() {
-	f.records = [][]string{}
+	f.Records = [][]string{}
 }
 
 func (f *Entity) Sort(onComplete func()) {
@@ -123,9 +123,9 @@ func (f *Entity) Join(
 func (f *Entity) FindById(key string) []string {
 	//file := f.shardService.OpenFile(key, f.FilePhase.PrefixName)
 	//reader := newCsvReader(file)
-	//records, _ := reader.ReadAll()
+	//Records, _ := reader.ReadAll()
 
-	records := f.records
+	records := f.Records
 
 	sorter := recordSorter{
 		records:    &records,
